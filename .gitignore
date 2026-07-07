@@ -1,0 +1,21 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# tfvars can contain env-specific values (e.g. the alert email below) that
+# shouldn't sit in a public repo; commit a .tfvars.example instead.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Editors / OS
+.DS_Store

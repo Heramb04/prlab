@@ -1,0 +1,4 @@
+region             = "us-east-1"
+cluster_name       = "prlab-lab"
+budget_alert_email = "you@example.com"
+infra_repo         = "your-github-user/prlab"

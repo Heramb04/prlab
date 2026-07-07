@@ -1,0 +1,88 @@
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+
+permissions:
+  id-token: write # required for OIDC AssumeRoleWithWebIdentity
+  contents: read
+  pull-requests: write # required to post the plan as a PR comment
+
+env:
+  TF_VERSION: "1.9.8"
+  TFLINT_VERSION: "0.63.1"
+  AWS_REGION: "us-east-1"
+  WORKDIR: terraform/envs/lab
+
+jobs:
+  fmt-validate-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive terraform
+
+      - name: Configure AWS credentials (OIDC, no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform init
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform validate
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v${{ env.TFLINT_VERSION }}
+
+      - name: TFLint
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          tflint --init
+          tflint --minimum-failure-severity=error
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform
+          config_file: .checkov.yaml
+          quiet: true
+
+      - name: Terraform plan
+        id: plan
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+        continue-on-error: true
+
+      - name: Post plan as PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('${{ env.WORKDIR }}/plan.txt', 'utf8').slice(-60000);
+            const body = `#### Terraform Plan (\`envs/lab\`)\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n\n</details>`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1

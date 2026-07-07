@@ -1,0 +1,21 @@
+# Checks deliberately skipped for this lab-budget project. Each has a
+# documented reason here; see docs/architecture.md for the fuller "why".
+# Everything else must pass.
+skip-check:
+  # Cross-region replication doubles S3 storage/transfer cost for a state
+  # bucket that already has versioning + a 90-day noncurrent-version expiry.
+  - CKV_AWS_144
+  # Access logging needs a second bucket + ongoing PUT costs; state-change
+  # audit trail is already covered by S3 versioning + DynamoDB lock history.
+  - CKV_AWS_18
+  # Event notifications aren't useful without a consumer (Lambda/SQS) wired
+  # up; nothing in this project reacts to state-bucket object events.
+  - CKV2_AWS_62
+  # Customer-managed KMS keys cost ~$1/month each; AWS-managed keys already
+  # satisfy encryption-at-rest for a lab with a $140 total credit budget.
+  - CKV_AWS_119 # DynamoDB CMK
+  # Registry-sourced modules (terraform-aws-modules/vpc) are version-pinned
+  # via the required version constraint + committed to a specific resolved
+  # release; commit-hash pinning is a git-source convention that doesn't
+  # apply to Terraform Registry module sources.
+  - CKV_TF_1

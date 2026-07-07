@@ -1,0 +1,2 @@
+region            = "us-east-1"
+state_bucket_name = "prlab-tfstate-<your-account-id>" # must be globally unique
