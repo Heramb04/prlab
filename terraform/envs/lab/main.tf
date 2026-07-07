@@ -81,3 +81,6 @@ module "github_oidc" {
   state_bucket_arn = data.terraform_remote_state.bootstrap.outputs.state_bucket_arn
   lock_table_arn   = data.terraform_remote_state.bootstrap.outputs.lock_table_arn
 }
+
+# CI verification: trivial comment-only change to trigger the terraform.yml
+# workflow and confirm it posts a clean plan comment (Phase 0 acceptance).
