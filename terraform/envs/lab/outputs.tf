@@ -21,3 +21,19 @@ output "budget_sns_topic_arn" {
 output "terraform_plan_role_arn" {
   value = module.github_oidc.terraform_plan_role_arn
 }
+
+output "ecr_push_role_arn" {
+  value = module.github_oidc.ecr_push_role_arn
+}
+
+output "eks_cluster_name" {
+  value = module.eks.cluster_name
+}
+
+output "eks_cluster_endpoint" {
+  value = module.eks.cluster_endpoint
+}
+
+output "configure_kubectl" {
+  value = "aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.region}"
+}

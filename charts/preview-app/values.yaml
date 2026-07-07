@@ -1,0 +1,47 @@
+# Per-PR values; ArgoCD's ApplicationSet (Phase 2) overrides pr.number,
+# image.tag, and gitSha per Application it templates. Defaults here are for
+# the Phase 1 manual `helm install -n pr-0` test.
+
+pr:
+  number: 0
+
+gitSha: "unknown"
+nodeType: "on-demand"
+
+image:
+  repository: "" # set at install time to the ECR repo URL
+  tag: "" # set at install time to the built image tag
+
+service:
+  port: 80
+  targetPort: 8000
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+ingress:
+  # Empty = use the ALB's own generated hostname. Once the ALB exists and
+  # its IP is known, set to "pr-0.<ip-with-dashes>.sslip.io" - e.g.
+  # "pr-0.54-235-16-247.sslip.io". Dashes, not dots, around the IP: the
+  # dotted form doesn't parse correctly once a text prefix precedes it.
+  host: ""
+
+postgres:
+  image: "postgres:16-alpine"
+  storageSize: 1Gi
+  storageClassName: gp3
+  user: prlab
+  password: prlab
+  database: prlab
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi

@@ -15,10 +15,10 @@ the platform's SLOs once Phase 5 lands.
 
 ## Status
 
-Building phase by phase. Currently: **Phase 0 — Foundations & guardrails**, done.
+Building phase by phase. Currently: **Phase 1 — Cluster + one manual preview**, done.
 
 - [x] Phase 0 — Foundations & guardrails
-- [ ] Phase 1 — Cluster + one manual preview
+- [x] Phase 1 — Cluster + one manual preview
 - [ ] Phase 2 — GitOps previews with ArgoCD
 - [ ] Phase 3 — Policy + TTL safety net
 - [ ] Phase 4 — Spot + interruption resilience
@@ -33,13 +33,36 @@ terraform/
 │   ├── budgets/       # AWS Budget + SNS email alerts
 │   ├── network/       # VPC, subnets, single NAT gateway
 │   ├── ecr/           # ECR repo + lifecycle policy
-│   └── github-oidc/   # GitHub OIDC provider + Terraform-plan IAM role
+│   ├── github-oidc/   # GitHub OIDC provider + plan/ECR-push IAM roles
+│   └── eks/           # EKS cluster, node group, ALB controller, metrics-server
 └── envs/lab/          # the one environment this project runs (S3 backend)
+charts/preview-app/    # Helm chart: demo app + Postgres (StatefulSet) + ALB Ingress
 .github/workflows/
 └── terraform.yml      # fmt, validate, tflint, checkov, plan-as-PR-comment
 docs/
 └── architecture.md    # design decisions and why
 ```
+
+## Manual preview (Phase 1)
+
+Until Phase 2 wires up ArgoCD, previews are installed by hand:
+
+```sh
+aws eks update-kubeconfig --name prlab-lab --region us-east-1
+
+helm install pr-0 charts/preview-app -n pr-0 --create-namespace \
+  --set image.repository=<ecr_repository_url output> \
+  --set image.tag=<tag from prlab-demo-app's CI run> \
+  --set gitSha=<short sha> \
+  --set pr.number=0
+
+kubectl label namespace pr-0 preview=true pr-number=0 --overwrite
+```
+
+Get the ALB's hostname from `kubectl get ingress -n pr-0`, resolve its IP,
+then optionally re-run `helm upgrade` with
+`--set ingress.host=pr-0.<ip-with-dashes>.sslip.io` (dashes, not dots,
+around the IP — see [docs/architecture.md](docs/architecture.md)).
 
 ## Cost discipline (non-negotiable)
 
@@ -73,6 +96,15 @@ After apply, check email for an SNS subscription-confirmation link and
 confirm it — budget alerts won't fire otherwise.
 
 ## Tearing down
+
+Manual `helm install`s aren't Terraform-managed, so uninstall those first:
+
+```sh
+helm uninstall pr-0 -n pr-0
+kubectl delete namespace pr-0
+```
+
+Then:
 
 ```sh
 cd terraform/envs/lab

@@ -33,6 +33,12 @@ variable "infra_repo" {
   default     = "Heramb04/prlab"
 }
 
+variable "demo_app_repo" {
+  description = "GitHub org/repo allowed to assume the ECR-push OIDC role"
+  type        = string
+  default     = "Heramb04/prlab-demo-app"
+}
+
 variable "state_bucket_name" {
   description = "Name of the S3 state bucket created by terraform/bootstrap (must match backend.tf)"
   type        = string
@@ -85,10 +91,19 @@ module "ecr" {
 module "github_oidc" {
   source = "../../modules/github-oidc"
 
-  infra_repo       = var.infra_repo
-  state_bucket_arn = local.state_bucket_arn
-  lock_table_arn   = local.lock_table_arn
+  infra_repo         = var.infra_repo
+  state_bucket_arn   = local.state_bucket_arn
+  lock_table_arn     = local.lock_table_arn
+  demo_app_repo      = var.demo_app_repo
+  ecr_repository_arn = module.ecr.repository_arn
 }
 
-# CI verification: trivial comment-only change to trigger the terraform.yml
-# workflow and confirm it posts a clean plan comment (Phase 0 acceptance).
+module "eks" {
+  source = "../../modules/eks"
+
+  cluster_name       = var.cluster_name
+  region             = var.region
+  vpc_id             = module.network.vpc_id
+  private_subnet_ids = module.network.private_subnet_ids
+  public_subnet_ids  = module.network.public_subnet_ids
+}

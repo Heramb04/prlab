@@ -28,6 +28,16 @@ variable "infra_repo" {
   type        = string
 }
 
+variable "demo_app_repo" {
+  description = "GitHub org/repo allowed to assume the ECR-push role, e.g. Heramb04/prlab-demo-app"
+  type        = string
+}
+
+variable "ecr_repository_arn" {
+  description = "ARN of the ECR repository the demo app's CI pushes images to"
+  type        = string
+}
+
 # GitHub rotates the leaf cert regularly; fetching the current thumbprint
 # via a live TLS handshake (rather than hardcoding one) is the documented
 # approach so this doesn't silently break on GitHub's next rotation.
@@ -112,4 +122,71 @@ resource "aws_iam_role_policy" "terraform_state_access" {
 
 output "terraform_plan_role_arn" {
   value = aws_iam_role.terraform_plan.arn
+}
+
+# CI in the app repo only ever builds and pushes images (never touches the
+# cluster - that's ArgoCD's job), so this role is scoped to ECR push actions
+# on exactly one repository, nothing else.
+data "aws_iam_policy_document" "ecr_push_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.demo_app_repo}:*"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ecr_push" {
+  name                 = "prlab-github-ecr-push"
+  assume_role_policy   = data.aws_iam_policy_document.ecr_push_trust.json
+  max_session_duration = 3600
+}
+
+data "aws_iam_policy_document" "ecr_push" {
+  # GetAuthorizationToken (the docker-login step) is only ever granted on
+  # resource "*" - ECR has no resource-level permission for it.
+  statement {
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:PutImage",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+    ]
+    resources = [var.ecr_repository_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "ecr_push" {
+  name   = "ecr-push"
+  role   = aws_iam_role.ecr_push.id
+  policy = data.aws_iam_policy_document.ecr_push.json
+}
+
+output "ecr_push_role_arn" {
+  value = aws_iam_role.ecr_push.arn
 }
