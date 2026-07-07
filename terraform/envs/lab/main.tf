@@ -33,17 +33,25 @@ variable "infra_repo" {
   default     = "Heramb04/prlab"
 }
 
+variable "state_bucket_name" {
+  description = "Name of the S3 state bucket created by terraform/bootstrap (must match backend.tf)"
+  type        = string
+  default     = "prlab-tfstate-211374268683"
+}
+
 data "aws_availability_zones" "available" {
   state = "available"
 }
 
-# Bootstrap manages its own local state (see terraform/bootstrap); read its
-# outputs here instead of hardcoding the bucket/table ARNs a second time.
-data "terraform_remote_state" "bootstrap" {
-  backend = "local"
-  config = {
-    path = "${path.module}/../../bootstrap/terraform.tfstate"
-  }
+data "aws_caller_identity" "current" {}
+
+locals {
+  # Bootstrap manages its own local (gitignored, not CI-visible) state, so
+  # CI can't read its outputs via terraform_remote_state. These ARNs are
+  # deterministic from the bucket name + account ID instead, keeping this
+  # config fully self-contained and CI-reproducible.
+  state_bucket_arn = "arn:aws:s3:::${var.state_bucket_name}"
+  lock_table_arn   = "arn:aws:dynamodb:${var.region}:${data.aws_caller_identity.current.account_id}:table/${var.state_bucket_name}-lock"
 }
 
 locals {
@@ -78,6 +86,9 @@ module "github_oidc" {
   source = "../../modules/github-oidc"
 
   infra_repo       = var.infra_repo
-  state_bucket_arn = data.terraform_remote_state.bootstrap.outputs.state_bucket_arn
-  lock_table_arn   = data.terraform_remote_state.bootstrap.outputs.lock_table_arn
+  state_bucket_arn = local.state_bucket_arn
+  lock_table_arn   = local.lock_table_arn
 }
+
+# CI verification: trivial comment-only change to trigger the terraform.yml
+# workflow and confirm it posts a clean plan comment (Phase 0 acceptance).

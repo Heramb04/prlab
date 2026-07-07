@@ -16,6 +16,10 @@ env:
   TFLINT_VERSION: "0.63.1"
   AWS_REGION: "us-east-1"
   WORKDIR: terraform/envs/lab
+  # Not committed (terraform.tfvars is gitignored so a public repo doesn't
+  # publish a personal email); CI supplies it via a repo secret instead.
+  TF_VAR_budget_alert_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
+  TF_VAR_infra_repo: ${{ github.repository }}
 
 jobs:
   fmt-validate-plan:
