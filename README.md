@@ -11,23 +11,63 @@ cost.
 
 See [docs/architecture.md](docs/architecture.md) for the full design and the
 reasoning behind each non-obvious choice, and [docs/slo.md](docs/slo.md) for
-the platform's SLOs once Phase 5 lands.
+the platform's SLOs and error-budget policy.
 
 **Resuming work?** Read [HANDOFF.md](HANDOFF.md) first — current live AWS
 state, what's actually verified working, environment/access notes specific
 to the dev machine, and gotchas already hit and fixed so you don't
 rediscover them.
 
+## How it works
+
+```
+        GitHub PR opened on prlab-demo-app
+                    │
+                    ▼
+     GitHub Actions (OIDC → IAM, no stored keys)
+        builds image → pushes to ECR
+        tag: pr-<number>-<full-sha>          CI never touches the cluster.
+                    │
+                    ▼
+     ArgoCD ApplicationSet — Pull Request generator (60s poll)
+        one Application per open PR, synced from charts/preview-app
+                    │
+        ┌───────────┴────────────────────────────────┐
+        ▼                                            ▼
+   namespace pr-<n>  (preview=true)          Kyverno admission policies
+   ├─ app Deployment (non-root)              ├─ disallow root containers
+   ├─ Postgres StatefulSet + PVC             ├─ require requests/limits
+   ├─ ALB Ingress → public URL               ├─ registry allowlist
+   └─ ResourceQuota + LimitRange  ◄──────────┴─ (generated per namespace)
+        │
+        ▼                                    Karpenter NodePool "preview"
+   pods land on tainted SPOT t3.smalls  ◄──  spot-first, on-demand fallback,
+        │                                    SQS interruption handling,
+        ▼                                    consolidation back to spot
+   ArgoCD Notifications: posts
+   "preview ready: <url>" as a PR comment   (~1-5 min after PR open;
+        │                                    SLO: 99% within 5 min)
+        ▼
+   PR closed/merged → generator drops the Application →
+   ArgoCD prunes namespace, workloads, PVC. Nothing to tear down.
+
+   Safety nets:  TTL reaper CronJob (warn at TTL−6h, close PR past 48h,
+                 delete orphans whose prune failed)
+   Observability: kube-prometheus-stack + Grafana dashboard
+                 (SLO success rate, error budget, spot $ saved,
+                 interruptions handled, node mix)
+```
+
 ## Status
 
-Building phase by phase. Currently: **Phase 4 — Spot + interruption resilience**, done.
+All five phases complete and verified live.
 
 - [x] Phase 0 — Foundations & guardrails
 - [x] Phase 1 — Cluster + one manual preview
 - [x] Phase 2 — GitOps previews with ArgoCD
 - [x] Phase 3 — Policy + TTL safety net
 - [x] Phase 4 — Spot + interruption resilience
-- [ ] Phase 5 — Observability, SLOs & polish
+- [x] Phase 5 — Observability, SLOs & polish
 
 ## Repo layout
 
@@ -111,6 +151,10 @@ kubectl apply -f policies/
 kubectl apply -f reaper/cronjob.yaml
 kubectl apply -f karpenter/nodepool-preview.yaml
 kubectl apply -f exporters/deployment.yaml
+kubectl apply -f monitoring/servicemonitors.yaml
+kubectl create configmap prlab-dashboard -n monitoring \
+  --from-file=preview-platform.json=dashboards/preview-platform.json
+kubectl label configmap prlab-dashboard -n monitoring grafana_dashboard=1
 ```
 
 Preview pods run on Karpenter-provisioned **spot** t3.smalls (tainted, so
@@ -132,6 +176,27 @@ kubectl port-forward -n argocd svc/argocd-server 8080:443
 kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' | base64 -d
 ```
 
+Grafana (dashboard: **prlab — Preview Platform**; login `admin` /
+`prlab-grafana`):
+
+```sh
+kubectl port-forward -n monitoring svc/kps-grafana 3000:80
+# http://localhost:3000/d/prlab-preview-platform
+```
+
+## Demo script (2-3 minutes, screen-record this)
+
+1. Show the Grafana dashboard: 0 active previews, node mix empty.
+2. Open a PR on `prlab-demo-app` (any trivial change).
+3. Narrate while it provisions (~1-5 min): CI builds the image, ArgoCD's
+   PR generator picks it up, Karpenter launches a spot node.
+4. The bot comments `prlab preview ready: <url>` — open the URL: the
+   health page shows the PR number, git SHA, and **Node type: spot**.
+5. Back to Grafana: active previews = 1, spot node up, $ saved ticking,
+   the PR's ready-time bar under the 300s line, SLO at 100%.
+6. Close the PR. Watch the namespace disappear (`kubectl get ns`) and the
+   spot node get consolidated away. Dashboard back to 0 — and $0.
+
 ## Cost discipline (non-negotiable)
 
 - **EKS control plane costs ~$73/month if left running — never leave it up.**
@@ -139,7 +204,8 @@ kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.pas
 - AWS Budget alerts at $10 / $25 / $50 (this project runs on a **$140 total
   credit** student/burner account — see [docs/architecture.md](docs/architecture.md#budget-thresholds)).
 - Single NAT gateway, not one per AZ.
-- Spot for all preview capacity once Karpenter lands (Phase 4).
+- All preview capacity is Karpenter-provisioned spot (~60% cheaper), exists
+  only while PRs are open, and consolidates away on close.
 - No RDS — Postgres runs in-cluster on small PVCs.
 
 ## Getting started (bootstrap, once per AWS account)

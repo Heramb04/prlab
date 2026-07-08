@@ -6,7 +6,9 @@ source of truth — anything with a timestamp below may be stale by the time
 you read it; re-verify live state before acting on it (especially AWS
 resource status and credit balance).
 
-**Last updated:** 2026-07-08T12:10Z, end of Phase 4.
+**Last updated:** 2026-07-08T16:15Z, end of Phase 5. **All five phases
+complete** — the project is functionally done; what remains is optional
+(stretch goals, demo recording) plus the standing cost decision below.
 
 ## Snapshot at last update
 
@@ -68,8 +70,16 @@ kubectl get cronjob -n argocd
   (docs/evidence/spot-interruption-recovery.md). Health page reports real
   capacity type via k8s API node-label read (deliberately not IMDS).
   Spot-savings exporter live in `monitoring` ns (~62% saved vs on-demand).
-- **Not started:** Phase 5 (observability: kube-prometheus-stack, Grafana
-  dashboard, SLO panel + docs/slo.md, README demo video).
+- **Phase 5** — kube-prometheus-stack 87.9.0 (slim: no alertmanager, 12h
+  retention), exporter v2 measuring "PR open → first deploy" per preview
+  (PR #5 measured live: 56s, inside the 5-min SLO), Grafana dashboard
+  `prlab-preview-platform` (all panels verified returning data via the
+  API), docs/slo.md with error-budget policy, README architecture diagram
+  + demo script. Grafana: port-forward svc/kps-grafana :80, admin /
+  prlab-grafana.
+- **Remaining (optional):** record the 2-3 min demo (script in README);
+  stretch goals from the original spec (LLM sync-failure summarizer,
+  OpenTelemetry tracing, Slack notifications, drift detection).
 
 Full detail and the reasoning behind every non-obvious choice:
 [README.md](README.md) and [docs/architecture.md](docs/architecture.md).
