@@ -13,6 +13,11 @@ See [docs/architecture.md](docs/architecture.md) for the full design and the
 reasoning behind each non-obvious choice, and [docs/slo.md](docs/slo.md) for
 the platform's SLOs once Phase 5 lands.
 
+**Resuming work?** Read [HANDOFF.md](HANDOFF.md) first — current live AWS
+state, what's actually verified working, environment/access notes specific
+to the dev machine, and gotchas already hit and fixed so you don't
+rediscover them.
+
 ## Status
 
 Building phase by phase. Currently: **Phase 2 — GitOps previews with ArgoCD**, done.
