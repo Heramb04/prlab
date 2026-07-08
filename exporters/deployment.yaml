@@ -1,0 +1,67 @@
+# Spot-savings exporter: monitoring namespace (kube-prometheus-stack joins
+# it in Phase 5 and scrapes this via the prometheus.io annotations).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spot-exporter
+  namespace: monitoring
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::211374268683:role/prlab-lab-spot-exporter
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spot-exporter
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: spot-exporter}
+  template:
+    metadata:
+      labels: {app: spot-exporter}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: spot-exporter
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: exporter
+          # Immutable sha tag; bump deliberately (built by exporter.yml).
+          image: 211374268683.dkr.ecr.us-east-1.amazonaws.com/prlab-spot-exporter:EXPORTER_IMAGE_TAG
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          ports:
+            - containerPort: 9100
+          env:
+            - name: AWS_REGION
+              value: us-east-1
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 100m, memory: 128Mi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 9100}
+            initialDelaySeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spot-exporter
+  namespace: monitoring
+  labels: {app: spot-exporter}
+spec:
+  selector: {app: spot-exporter}
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: 9100

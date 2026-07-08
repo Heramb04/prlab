@@ -143,6 +143,13 @@ module "karpenter" {
   oidc_provider_arn      = module.eks.oidc_provider_arn
 }
 
+module "spot_exporter" {
+  source = "../../modules/spot-exporter"
+
+  cluster_name      = var.cluster_name
+  oidc_provider_arn = module.eks.oidc_provider_arn
+}
+
 # NOT instantiated: this Free Plan burner account has no FIS subscription
 # (CreateExperimentTemplate fails with SubscriptionRequiredException -
 # verified live). modules/fis is kept as the correct implementation for a

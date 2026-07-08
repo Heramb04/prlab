@@ -110,6 +110,59 @@ resource "aws_ecr_lifecycle_policy" "reaper" {
   })
 }
 
+# Spot-savings Prometheus exporter image (exporters/spot_savings.py).
+resource "aws_ecr_repository" "exporter" {
+  name                 = "prlab-spot-exporter"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "exporter" {
+  repository = aws_ecr_repository.exporter.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Expire untagged images after 3 days"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 3
+        }
+        action = { type = "expire" }
+      },
+      {
+        rulePriority = 2
+        description  = "Keep only the 5 most recent tagged exporter images"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["sha-"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 5
+        }
+        action = { type = "expire" }
+      }
+    ]
+  })
+}
+
+output "exporter_repository_url" {
+  value = aws_ecr_repository.exporter.repository_url
+}
+
+output "exporter_repository_arn" {
+  value = aws_ecr_repository.exporter.arn
+}
+
 output "repository_url" {
   value = aws_ecr_repository.app.repository_url
 }
