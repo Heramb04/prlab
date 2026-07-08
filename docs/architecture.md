@@ -373,6 +373,73 @@ small, unit-testable Python program is the honest tool. The cleanup
 controller is disabled in the Kyverno install to save a pod's worth of
 memory on t3.smalls.
 
+## Phase 4 — Spot + interruption resilience
+
+### What Karpenter gave us for free, and what we built on top
+
+Free: interruption handling end-to-end (SQS queue fed by EventBridge spot/
+rebalance/health events → taint → replacement NodeClaim → drain → delete),
+price-aware capacity selection (spot-first when both are allowed),
+consolidation of underutilized nodes, and node lifecycle (24h expiry keeps
+AMIs fresh). Built on top: the preview NodePool policy (taint + t3.small
+constraint + limits), the chart's scheduling contract
+(nodeSelector/toleration), the capacity-type display path, the synthetic
+interruption test, and the savings exporter. That's the honest
+buy-vs-build split to say in an interview: the *platform policy* is ours,
+the *node mechanics* are Karpenter's.
+
+### The Free Plan blocks non-free-tier instance types even on spot
+
+Verified live before building anything (per the HANDOFF flag): t3.small
+launches fine as spot; t3.medium spot fails with the same "not eligible
+for Free Tier" error as on-demand. So the NodePool pins t3.small — on a
+normal account this would be a broad list (t3/t3a/m6a/m7i-flex...) so
+Karpenter can shop across many spot pools. Consequence: fewer fallback
+options within an AZ (see the interruption-recovery evidence — that's why
+the replacement was on-demand).
+
+### Why the interruption test injects a synthetic SQS message instead of FIS
+
+The account has no FIS subscription (SubscriptionRequiredException on
+CreateExperimentTemplate — another Free Plan limit discovered live).
+`modules/fis` keeps the correct experiment template for a normal account,
+uninstantiated. The workaround is arguably a better test of understanding:
+Karpenter learns about spot interruptions from an SQS queue fed by an
+EventBridge rule matching `EC2 Spot Instance Interruption Warning` events
+— so hand-crafting that exact event JSON for a live node and
+`aws sqs send-message`-ing it drives the identical controller code path a
+real reclamation (or FIS) would. Timeline captured in
+docs/evidence/spot-interruption-recovery.md: taint at +2s, replacement
+launched at +6s, preview fully recovered (EBS re-attached, serving
+writes) at +75s.
+
+### Why the app reads its capacity type from the k8s API, not IMDS
+
+The obvious way for a pod to ask "am I on spot?" is the instance metadata
+service (`instance-life-cycle`), but pods can only reach IMDS if the
+node's metadata hop limit is 2 - which also hands every preview pod (i.e.
+arbitrary PR code) the node's IAM role credentials. Hop limit stays 1
+(Karpenter's secure default); instead the pod reads its own Node object
+(name via downward API) with a `get nodes` ClusterRole and reports the
+`karpenter.sh/capacity-type` label. Measured, not asserted - the health
+page said "spot" on the spot node and "on-demand" on the post-interruption
+fallback node without any config change.
+
+### Why the node-reader ClusterRole/Binding are per-release
+
+Cluster-scoped resources can't have two ArgoCD Application owners: if two
+previews shared one ClusterRole, pruning either PR would delete it out
+from under the other. Each release stamps its own `pr-N-node-reader`
+pair - trivially duplicative, structurally safe.
+
+### Why on-demand prices in the exporter are a static table
+
+The AWS Pricing API lives at a different endpoint with its own IAM,
+returns hundreds of lines of JSON per SKU, and this account can launch
+exactly one instance family. A five-entry us-east-1 price table with a
+comment beats that integration at lab scale; swap in the Pricing API when
+the NodePool list stops being one line.
+
 ### Why the preview namespace has no custom "created-at" annotation
 
 Kubernetes already stamps every object with an immutable

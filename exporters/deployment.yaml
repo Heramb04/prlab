@@ -37,7 +37,7 @@ spec:
       containers:
         - name: exporter
           # Immutable sha tag; bump deliberately (built by exporter.yml).
-          image: 211374268683.dkr.ecr.us-east-1.amazonaws.com/prlab-spot-exporter:EXPORTER_IMAGE_TAG
+          image: 211374268683.dkr.ecr.us-east-1.amazonaws.com/prlab-spot-exporter:sha-720a4e42
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}

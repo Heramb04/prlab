@@ -95,7 +95,7 @@ module "github_oidc" {
   state_bucket_arn    = local.state_bucket_arn
   lock_table_arn      = local.lock_table_arn
   ecr_push_repos      = [var.demo_app_repo, var.infra_repo]
-  ecr_repository_arns = [module.ecr.repository_arn, module.ecr.reaper_repository_arn]
+  ecr_repository_arns = [module.ecr.repository_arn, module.ecr.reaper_repository_arn, module.ecr.exporter_repository_arn]
 }
 
 module "eks" {

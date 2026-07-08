@@ -20,13 +20,13 @@ rediscover them.
 
 ## Status
 
-Building phase by phase. Currently: **Phase 3 — Policy + TTL safety net**, done.
+Building phase by phase. Currently: **Phase 4 — Spot + interruption resilience**, done.
 
 - [x] Phase 0 — Foundations & guardrails
 - [x] Phase 1 — Cluster + one manual preview
 - [x] Phase 2 — GitOps previews with ArgoCD
 - [x] Phase 3 — Policy + TTL safety net
-- [ ] Phase 4 — Spot + interruption resilience
+- [x] Phase 4 — Spot + interruption resilience
 - [ ] Phase 5 — Observability, SLOs & polish
 
 ## Repo layout
@@ -41,22 +41,29 @@ terraform/
 │   ├── github-oidc/   # GitHub OIDC provider + plan/ECR-push IAM roles
 │   ├── eks/           # EKS cluster, node group, ALB controller, metrics-server
 │   ├── argocd/        # ArgoCD install (Terraform helm_release)
-│   └── kyverno/       # Kyverno install (policy engine)
+│   ├── kyverno/       # Kyverno install (policy engine)
+│   ├── karpenter/     # Karpenter controller + IRSA + SQS interruption queue
+│   ├── spot-exporter/ # IRSA for the spot-savings exporter
+│   └── fis/           # FIS spot-interruption template (needs an account
+│                      # with FIS; not instantiated on this Free Plan one)
 └── envs/lab/          # the one environment this project runs (S3 backend)
 charts/preview-app/    # Helm chart: demo app + Postgres (StatefulSet) + ALB Ingress
 argocd/
 ├── applicationset-previews.yaml   # PR generator - the heart of the platform
 └── notifications.yaml             # PR comment on sync-healthy
+karpenter/             # preview NodePool + EC2NodeClass (spot-first, tainted)
 policies/              # Kyverno ClusterPolicies: disallow-root, require-limits,
                        # restrict-registries, per-namespace quota/limits generation
 reaper/                # TTL reaper: Python CronJob, unit-tested; warns at TTL-6h
                        # then closes the PR (teardown rides the normal prune path)
+exporters/             # spot-savings Prometheus exporter ($ saved vs on-demand)
 .github/workflows/
 ├── terraform.yml      # fmt, validate, tflint, checkov, plan-as-PR-comment
-└── reaper.yml         # reaper: pytest on PR, build+push image on main
+├── reaper.yml         # reaper: pytest on PR, build+push image on main
+└── exporter.yml       # exporter: build+push image on main
 docs/
 ├── architecture.md    # design decisions and why
-└── evidence/          # captured live policy denials etc.
+└── evidence/          # captured live: policy denials, interruption recovery
 ```
 
 ## How previews work (Phase 2 — fully automatic)
@@ -102,7 +109,16 @@ kubectl apply -f argocd/applicationset-previews.yaml
 kubectl apply -f argocd/notifications.yaml
 kubectl apply -f policies/
 kubectl apply -f reaper/cronjob.yaml
+kubectl apply -f karpenter/nodepool-preview.yaml
+kubectl apply -f exporters/deployment.yaml
 ```
+
+Preview pods run on Karpenter-provisioned **spot** t3.smalls (tainted, so
+platform pods stay on the managed node group), with on-demand fallback and
+automatic consolidation back to spot — interruption handling verified live
+with a synthetic spot-interruption event; see
+[docs/evidence/spot-interruption-recovery.md](docs/evidence/spot-interruption-recovery.md)
+(75s from warning to fully recovered preview).
 
 The GitHub token used by both the PR generator and Notifications is passed
 to Terraform via `TF_VAR_github_token` at apply time (e.g.

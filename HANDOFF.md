@@ -6,7 +6,7 @@ source of truth — anything with a timestamp below may be stale by the time
 you read it; re-verify live state before acting on it (especially AWS
 resource status and credit balance).
 
-**Last updated:** 2026-07-08T11:00Z, end of Phase 3.
+**Last updated:** 2026-07-08T12:10Z, end of Phase 4.
 
 ## Snapshot at last update
 
@@ -59,8 +59,17 @@ kubectl get cronjob -n argocd
   path verified against a synthetic namespace. Also: VPC CNI prefix
   delegation + maxPods=110 (was 11/node — the whole fleet had 2 free pod
   slots before this).
-- **Not started:** Phase 4 (Karpenter spot + FIS interruption testing),
-  Phase 5 (observability, SLOs, polish).
+- **Phase 4** — Karpenter 1.12.1: previews run on tainted spot t3.smalls
+  (Free Plan blocks non-free-tier types even on spot — verified), with
+  on-demand fallback and consolidation both observed live. FIS unavailable
+  on this account (SubscriptionRequiredException); interruption tested via
+  a synthetic SQS event instead — 75s warning→full recovery, then
+  consolidation moved the preview back to spot unprompted
+  (docs/evidence/spot-interruption-recovery.md). Health page reports real
+  capacity type via k8s API node-label read (deliberately not IMDS).
+  Spot-savings exporter live in `monitoring` ns (~62% saved vs on-demand).
+- **Not started:** Phase 5 (observability: kube-prometheus-stack, Grafana
+  dashboard, SLO panel + docs/slo.md, README demo video).
 
 Full detail and the reasoning behind every non-obvious choice:
 [README.md](README.md) and [docs/architecture.md](docs/architecture.md).
@@ -144,6 +153,21 @@ reading before assuming something works as documented elsewhere.
   test, create a one-off Job from the CronJob with short overrides (see
   the make_reaper_test_job.py pattern in session scratchpad / git history)
   rather than editing the CronJob itself.
+- **Free Plan blocks non-free-tier instance types even on SPOT** (t3.medium
+  spot fails identically to on-demand), and **FIS isn't subscribable at
+  all**. Spot t3.small works fine (~$0.008/hr vs $0.0208 on-demand).
+- **Karpenter chart installs into kube-system** — the eks//karpenter
+  submodule's IRSA trust defaults to `karpenter:karpenter` and the
+  controller crashloops on AssumeRole 403 unless
+  `irsa_namespace_service_accounts = ["kube-system:karpenter"]` is set.
+  Karpenter 1.12 also needs `iam:ListInstanceProfiles` beyond the module's
+  bundled policy (supplemental policy in modules/karpenter).
+- **Synthetic spot interruptions**: send an EventBridge-shaped
+  `EC2 Spot Instance Interruption Warning` JSON to the
+  `Karpenter-prlab-lab` SQS queue with the target instance-id — Karpenter
+  treats it exactly like a real reclamation. 2-min-warning semantics not
+  included (the instance doesn't actually terminate), but the entire
+  cordon/replace/drain path runs.
 
 ## Cost discipline
 
