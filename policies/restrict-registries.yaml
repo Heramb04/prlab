@@ -1,0 +1,46 @@
+# Preview images may only come from the project's own ECR registry, plus
+# public.ecr.aws/docker/library for the Postgres base image. Anything from
+# Docker Hub or an arbitrary registry is rejected. Incident this prevents:
+# a PR quietly swapping the image for a cryptominer or a typosquatted
+# lookalike pulled from an uncontrolled registry.
+#
+# Why public.ecr.aws is allowed at all: previews need the official postgres
+# image, and pulling it via AWS's ECR Public mirror avoids Docker Hub's
+# anonymous rate limits (which bite hard from NAT'd EKS nodes that all
+# share one egress IP). The stricter alternative - an ECR pull-through
+# cache so literally everything comes from the private registry - needs
+# extra node-role IAM (BatchImportUpstreamImage, CreateRepository) and was
+# deliberately skipped at lab scale; see docs/architecture.md.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/description: >-
+      Preview images must come from the project ECR registry (or the ECR
+      Public docker/library mirror for the Postgres base image).
+spec:
+  background: true
+  rules:
+    - name: allowed-registries-only
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaceSelector:
+                matchLabels:
+                  preview: "true"
+      validate:
+        failureAction: Enforce
+        message: >-
+          Preview images must come from 211374268683.dkr.ecr.us-east-1.amazonaws.com
+          or public.ecr.aws/docker/library (got a disallowed registry).
+        pattern:
+          spec:
+            containers:
+              - image: "211374268683.dkr.ecr.us-east-1.amazonaws.com/* | public.ecr.aws/docker/library/*"
+            =(initContainers):
+              - image: "211374268683.dkr.ecr.us-east-1.amazonaws.com/* | public.ecr.aws/docker/library/*"
+            =(ephemeralContainers):
+              - image: "211374268683.dkr.ecr.us-east-1.amazonaws.com/* | public.ecr.aws/docker/library/*"

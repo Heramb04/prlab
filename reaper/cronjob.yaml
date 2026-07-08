@@ -1,0 +1,90 @@
+# TTL reaper: runs every 15 minutes in the argocd namespace (so it can
+# mount the same GitHub token Secret the notifications controller uses).
+#
+# Its Kubernetes permissions are deliberately minimal: list/delete
+# namespaces and delete argocd Applications - nothing else. For OPEN PRs
+# it never deletes anything in-cluster at all; it closes the PR and lets
+# the ordinary ArgoCD prune path do the teardown. Direct deletion is only
+# for orphans (closed PRs whose prune never happened).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: preview-reaper
+  namespace: argocd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: preview-reaper
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, list, delete]
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    verbs: [get, list, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: preview-reaper
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: preview-reaper
+subjects:
+  - kind: ServiceAccount
+    name: preview-reaper
+    namespace: argocd
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: preview-reaper
+  namespace: argocd
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: preview-reaper
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: reaper
+              # Immutable sha tag; bump deliberately when reaper code changes
+              # (built and pushed by .github/workflows/reaper.yml).
+              image: 211374268683.dkr.ecr.us-east-1.amazonaws.com/prlab-reaper:REAPER_IMAGE_TAG
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              env:
+                - name: TTL_HOURS
+                  value: "48"
+                - name: WARN_BEFORE_HOURS
+                  value: "6"
+                - name: ORPHAN_GRACE_HOURS
+                  value: "0.5"
+                - name: GITHUB_REPO
+                  value: Heramb04/prlab-demo-app
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: argocd-notifications-secret
+                      key: github-token

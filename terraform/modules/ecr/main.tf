@@ -64,6 +64,52 @@ resource "aws_ecr_lifecycle_policy" "app" {
   })
 }
 
+# Platform-owned images (the TTL reaper) live in their own repository so
+# app-image and platform-image lifecycles stay independent.
+resource "aws_ecr_repository" "reaper" {
+  name                 = "prlab-reaper"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "reaper" {
+  repository = aws_ecr_repository.reaper.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Expire untagged images after 3 days"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 3
+        }
+        action = { type = "expire" }
+      },
+      {
+        rulePriority = 2
+        description  = "Keep only the 5 most recent tagged reaper images"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["sha-"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 5
+        }
+        action = { type = "expire" }
+      }
+    ]
+  })
+}
+
 output "repository_url" {
   value = aws_ecr_repository.app.repository_url
 }
@@ -74,4 +120,12 @@ output "repository_arn" {
 
 output "repository_name" {
   value = aws_ecr_repository.app.name
+}
+
+output "reaper_repository_url" {
+  value = aws_ecr_repository.reaper.repository_url
+}
+
+output "reaper_repository_arn" {
+  value = aws_ecr_repository.reaper.arn
 }

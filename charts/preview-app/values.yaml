@@ -32,7 +32,10 @@ ingress:
   host: ""
 
 postgres:
-  image: "postgres:16-alpine"
+  # ECR Public mirror of the official image, not docker.io: complies with
+  # the restrict-image-registries policy and avoids Docker Hub anonymous
+  # rate limits (all nodes share one NAT egress IP).
+  image: "public.ecr.aws/docker/library/postgres:16-alpine"
   storageSize: 1Gi
   storageClassName: gp3
   user: prlab

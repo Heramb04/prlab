@@ -30,6 +30,12 @@ spec:
       labels:
         preview: "true"
         pr-number: "{{.number}}"
+      # Without this finalizer, deleting an Application by any path other
+      # than the ApplicationSet's own prune (e.g. the TTL reaper, or a
+      # human kubectl delete) is NON-cascading: the Application object
+      # vanishes but every resource it deployed stays behind.
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
     spec:
       project: default
       source:

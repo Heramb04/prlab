@@ -28,14 +28,14 @@ variable "infra_repo" {
   type        = string
 }
 
-variable "demo_app_repo" {
-  description = "GitHub org/repo allowed to assume the ECR-push role, e.g. Heramb04/prlab-demo-app"
-  type        = string
+variable "ecr_push_repos" {
+  description = "GitHub org/repos allowed to assume the ECR-push role (app repo for app images, infra repo for the reaper image)"
+  type        = list(string)
 }
 
-variable "ecr_repository_arn" {
-  description = "ARN of the ECR repository the demo app's CI pushes images to"
-  type        = string
+variable "ecr_repository_arns" {
+  description = "ARNs of the ECR repositories CI is allowed to push to"
+  type        = list(string)
 }
 
 # GitHub rotates the leaf cert regularly; fetching the current thumbprint
@@ -124,9 +124,10 @@ output "terraform_plan_role_arn" {
   value = aws_iam_role.terraform_plan.arn
 }
 
-# CI in the app repo only ever builds and pushes images (never touches the
-# cluster - that's ArgoCD's job), so this role is scoped to ECR push actions
-# on exactly one repository, nothing else.
+# CI only ever builds and pushes images (never touches the cluster -
+# that's ArgoCD's job). One push role shared by both project repos (app
+# images from prlab-demo-app, the reaper image from prlab) - acceptable
+# for a single-owner lab; per-repo roles would be the team-scale answer.
 data "aws_iam_policy_document" "ecr_push_trust" {
   statement {
     effect  = "Allow"
@@ -146,7 +147,7 @@ data "aws_iam_policy_document" "ecr_push_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.demo_app_repo}:*"]
+      values   = [for repo in var.ecr_push_repos : "repo:${repo}:*"]
     }
   }
 }
@@ -177,7 +178,7 @@ data "aws_iam_policy_document" "ecr_push" {
       "ecr:BatchGetImage",
       "ecr:GetDownloadUrlForLayer",
     ]
-    resources = [var.ecr_repository_arn]
+    resources = var.ecr_repository_arns
   }
 }
 

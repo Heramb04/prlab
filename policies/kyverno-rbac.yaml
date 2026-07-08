@@ -1,0 +1,26 @@
+# Kyverno's background controller (which executes generate rules) ships
+# with RBAC for Kyverno's own resource types only. Generating core
+# resources like ResourceQuota/LimitRange needs explicit extra permissions,
+# granted via Kyverno's documented aggregation label - this ClusterRole is
+# aggregated into the background controller's effective role automatically.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno:generate-preview-guardrails
+  labels:
+    app.kubernetes.io/component: background-controller
+    app.kubernetes.io/instance: kyverno
+    rbac.kyverno.io/aggregate-to-background-controller: "true"
+rules:
+  - apiGroups: [""]
+    resources:
+      - resourcequotas
+      - limitranges
+    verbs:
+      - create
+      - update
+      - patch
+      - delete
+      - get
+      - list
+      - watch

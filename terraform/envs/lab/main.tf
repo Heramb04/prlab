@@ -91,11 +91,11 @@ module "ecr" {
 module "github_oidc" {
   source = "../../modules/github-oidc"
 
-  infra_repo         = var.infra_repo
-  state_bucket_arn   = local.state_bucket_arn
-  lock_table_arn     = local.lock_table_arn
-  demo_app_repo      = var.demo_app_repo
-  ecr_repository_arn = module.ecr.repository_arn
+  infra_repo          = var.infra_repo
+  state_bucket_arn    = local.state_bucket_arn
+  lock_table_arn      = local.lock_table_arn
+  ecr_push_repos      = [var.demo_app_repo, var.infra_repo]
+  ecr_repository_arns = [module.ecr.repository_arn, module.ecr.reaper_repository_arn]
 }
 
 module "eks" {
@@ -122,4 +122,13 @@ module "argocd" {
   cluster_ca_certificate = module.eks.cluster_certificate_authority_data
   region                 = var.region
   github_token           = var.github_token
+}
+
+module "kyverno" {
+  source = "../../modules/kyverno"
+
+  cluster_name           = module.eks.cluster_name
+  cluster_endpoint       = module.eks.cluster_endpoint
+  cluster_ca_certificate = module.eks.cluster_certificate_authority_data
+  region                 = var.region
 }

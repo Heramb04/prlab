@@ -1,0 +1,47 @@
+# Containers in preview namespaces must not run as root. A compromised
+# preview app (previews run arbitrary PR code by definition!) running as
+# root is one container escape away from the node; as non-root it isn't.
+# Scoped to preview namespaces via namespaceSelector so platform components
+# (kube-system, argocd, kyverno itself) are untouched.
+#
+# Kyverno autogen also applies this rule to Deployments/StatefulSets/etc.,
+# so a bad Deployment is rejected at admission with a clear message -
+# ArgoCD surfaces that message directly in the Application's sync error.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-root-user
+  annotations:
+    policies.kyverno.io/description: >-
+      Preview workloads must set runAsNonRoot, either pod-wide or on every
+      container. Incident this prevents: a malicious or compromised PR
+      running as root and escalating from container to node.
+spec:
+  background: true
+  rules:
+    - name: run-as-non-root
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaceSelector:
+                matchLabels:
+                  preview: "true"
+      validate:
+        failureAction: Enforce
+        message: >-
+          Preview containers must not run as root. Set
+          securityContext.runAsNonRoot=true at the pod level, or on every
+          container (including init containers).
+        anyPattern:
+          - spec:
+              securityContext:
+                runAsNonRoot: true
+          - spec:
+              containers:
+                - securityContext:
+                    runAsNonRoot: true
+              =(initContainers):
+                - securityContext:
+                    runAsNonRoot: true

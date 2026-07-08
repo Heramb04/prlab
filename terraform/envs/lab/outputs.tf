@@ -26,6 +26,10 @@ output "ecr_push_role_arn" {
   value = module.github_oidc.ecr_push_role_arn
 }
 
+output "reaper_repository_url" {
+  value = module.ecr.reaper_repository_url
+}
+
 output "eks_cluster_name" {
   value = module.eks.cluster_name
 }

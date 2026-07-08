@@ -14,9 +14,24 @@ spec:
       labels:
         app: {{ .Release.Name }}-postgres
     spec:
+      securityContext:
+        # postgres:16-alpine's postgres user is uid/gid 70. Starting the
+        # container directly as that uid (rather than root-then-su-exec,
+        # the image's default) satisfies the disallow-root policy; fsGroup
+        # makes the PVC mount group-writable so initdb still works.
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 5432
           env:

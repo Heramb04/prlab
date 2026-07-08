@@ -1,0 +1,78 @@
+# Every namespace labeled preview=true automatically receives a
+# ResourceQuota and a LimitRange, generated (and kept in sync) by Kyverno's
+# background controller. Injecting these by policy rather than putting them
+# in the preview-app Helm chart means the guardrails hold no matter HOW a
+# preview namespace comes to exist - chart, kubectl, or a future second
+# chart that forgets them. The platform enforces its own floor.
+#
+# Quota sizing: one preview (app + postgres) requests 100m CPU / 192Mi and
+# limits out at 500m / 768Mi, so this quota comfortably fits one preview
+# per namespace with headroom for a debug pod, while capping the blast
+# radius of any single PR at well under one t3.small node.
+#
+# Requires kyverno-rbac.yaml: the background controller's default RBAC
+# can't create ResourceQuota/LimitRange objects.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: preview-ns-guardrails
+  annotations:
+    policies.kyverno.io/description: >-
+      Injects a ResourceQuota and LimitRange into every preview namespace.
+spec:
+  generateExisting: true
+  rules:
+    - name: generate-resourcequota
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  preview: "true"
+      generate:
+        synchronize: true
+        apiVersion: v1
+        kind: ResourceQuota
+        name: preview-quota
+        namespace: "{{request.object.metadata.name}}"
+        data:
+          spec:
+            hard:
+              requests.cpu: "500m"
+              requests.memory: 512Mi
+              limits.cpu: "1500m"
+              limits.memory: 1536Mi
+              pods: "5"
+              services: "5"
+              persistentvolumeclaims: "2"
+              requests.storage: 5Gi
+    - name: generate-limitrange
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  preview: "true"
+      generate:
+        synchronize: true
+        apiVersion: v1
+        kind: LimitRange
+        name: preview-limits
+        namespace: "{{request.object.metadata.name}}"
+        data:
+          spec:
+            limits:
+              - type: Container
+                defaultRequest:
+                  cpu: 50m
+                  memory: 64Mi
+                default:
+                  cpu: 200m
+                  memory: 256Mi
+                max:
+                  cpu: "1"
+                  memory: 1Gi

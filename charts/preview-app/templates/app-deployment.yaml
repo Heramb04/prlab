@@ -16,9 +16,19 @@ spec:
         app: {{ .Release.Name }}-app
     spec:
       serviceAccountName: {{ .Release.Name }}-app
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          securityContext:
+            # uid 1000 = appuser baked into the demo-app image
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: {{ .Values.service.targetPort }}
           env:

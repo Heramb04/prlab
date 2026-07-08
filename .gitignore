@@ -19,3 +19,8 @@ override.tf.json
 
 # Editors / OS
 .DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

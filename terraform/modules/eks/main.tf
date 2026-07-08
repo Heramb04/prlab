@@ -72,7 +72,22 @@ module "eks" {
   cluster_addons = {
     coredns    = {}
     kube-proxy = {}
-    vpc-cni    = {}
+    vpc-cni = {
+      # t3.small's default ENI math caps kubelet at 11 pods/node - system
+      # pods + ArgoCD alone consume ~20 of the fleet's 22 slots, so there
+      # was no room left for Kyverno or more than one preview. Prefix
+      # delegation assigns /28 prefixes (16 IPs) per ENI slot instead of
+      # single IPs, raising the realistic ceiling past the kubelet cap we
+      # set below. before_compute ensures the CNI env is live before any
+      # node registers, so new nodes pick it up at kubelet start.
+      before_compute = true
+      configuration_values = jsonencode({
+        env = {
+          ENABLE_PREFIX_DELEGATION = "true"
+          WARM_PREFIX_TARGET       = "1"
+        }
+      })
+    }
     aws-ebs-csi-driver = {
       service_account_role_arn = module.ebs_csi_irsa.iam_role_arn
     }
@@ -92,6 +107,28 @@ module "eks" {
       min_size       = 1
       max_size       = 3
       desired_size   = 2
+
+      # Must be explicit: without it the module's user-data logic falls
+      # back to the legacy "linux" (AL2) template path and silently
+      # ignores cloudinit_pre_nodeadm below - the running node group only
+      # reports AL2023 because the EKS API defaults it, not because the
+      # module knew.
+      ami_type = "AL2023_x86_64_STANDARD"
+
+      # Managed node groups compute max-pods from the pre-prefix-delegation
+      # ENI formula (11 on t3.small) at bootstrap; override via nodeadm.
+      # 110 is the EKS-recommended ceiling for small instance types.
+      cloudinit_pre_nodeadm = [{
+        content_type = "application/node.eks.aws"
+        content      = <<-EOT
+          apiVersion: node.eks.aws/v1alpha1
+          kind: NodeConfig
+          spec:
+            kubelet:
+              config:
+                maxPods: 110
+        EOT
+      }]
     }
   }
 
