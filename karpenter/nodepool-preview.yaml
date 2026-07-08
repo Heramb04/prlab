@@ -1,0 +1,73 @@
+# Karpenter capacity for preview workloads: spot-first with on-demand
+# fallback, tainted so only preview pods (which tolerate it) land here.
+# System/platform pods stay on the managed node group.
+#
+# Instance types are pinned to t3.small because this account's AWS Free
+# Plan hard-blocks non-free-tier instance types FOR SPOT TOO (verified
+# live: t3.small spot launches, t3.medium spot fails with the same
+# "not eligible for Free Tier" error as on-demand). On a normal account
+# this list would be a broader mix so Karpenter can shop across pools.
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: preview
+spec:
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: prlab-lab-karpenter-node
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: prlab-lab
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: prlab-lab
+  # IMDSv2, hop limit 1 (pods cannot reach IMDS / steal node credentials).
+  # The app discovers its capacity type via the k8s API, not IMDS.
+  metadataOptions:
+    httpTokens: required
+    httpPutResponseHopLimit: 1
+  kubelet:
+    # Prefix delegation is on cluster-wide; same override as the managed
+    # node group (default ENI math would cap t3.small at 11 pods).
+    maxPods: 110
+  tags:
+    Project: prlab
+    prlab.dev/node-purpose: preview
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: preview
+spec:
+  template:
+    metadata:
+      labels:
+        prlab.dev/node-purpose: preview
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: preview
+      requirements:
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["t3.small"]
+        # Spot preferred, on-demand fallback: with both allowed, Karpenter
+        # picks spot first (price-capacity-optimized) and falls back to
+        # on-demand only when no spot pool has capacity.
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+      taints:
+        - key: prlab.dev/preview
+          value: "true"
+          effect: NoSchedule
+      # Previews are ephemeral; recycle nodes daily regardless (keeps AMIs
+      # fresh and exercises the interruption-recovery path continuously).
+      expireAfter: 24h
+  limits:
+    cpu: "8"
+    memory: 16Gi
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 60s

@@ -30,6 +30,9 @@ output "reaper_repository_url" {
   value = module.ecr.reaper_repository_url
 }
 
+# fis module not instantiated on this account (no FIS subscription on the
+# Free Plan); see main.tf.
+
 output "eks_cluster_name" {
   value = module.eks.cluster_name
 }

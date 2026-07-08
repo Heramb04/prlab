@@ -132,3 +132,26 @@ module "kyverno" {
   cluster_ca_certificate = module.eks.cluster_certificate_authority_data
   region                 = var.region
 }
+
+module "karpenter" {
+  source = "../../modules/karpenter"
+
+  cluster_name           = module.eks.cluster_name
+  cluster_endpoint       = module.eks.cluster_endpoint
+  cluster_ca_certificate = module.eks.cluster_certificate_authority_data
+  region                 = var.region
+  oidc_provider_arn      = module.eks.oidc_provider_arn
+}
+
+# NOT instantiated: this Free Plan burner account has no FIS subscription
+# (CreateExperimentTemplate fails with SubscriptionRequiredException -
+# verified live). modules/fis is kept as the correct implementation for a
+# normal account; on THIS account, spot-interruption handling is tested by
+# injecting a synthetic EC2 "Spot Instance Interruption Warning" event
+# into Karpenter's SQS interruption queue instead, which drives the exact
+# same controller code path FIS would. See docs/architecture.md.
+#
+# module "fis" {
+#   source       = "../../modules/fis"
+#   cluster_name = var.cluster_name
+# }

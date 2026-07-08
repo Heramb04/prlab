@@ -1,0 +1,32 @@
+# Lets the app read ITS OWN node's labels via the Kubernetes API, so the
+# health page can display the real capacity type (spot vs on-demand) as
+# measured, not asserted. Chosen over the IMDS route deliberately: reading
+# IMDS from pods requires hop-limit 2 on node metadata options, which also
+# exposes the node's IAM credentials to every preview pod - a real
+# escalation path for arbitrary PR code. A read-only `get nodes` grant is
+# the far smaller privilege.
+#
+# ClusterRole+Binding are per-release (pr-N-prefixed) rather than shared:
+# two ArgoCD Applications must never both own one cluster-scoped resource,
+# or pruning either preview would break the other.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-node-reader
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-node-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-app
+    namespace: {{ .Release.Namespace }}

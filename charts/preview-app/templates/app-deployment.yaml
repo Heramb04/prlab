@@ -16,6 +16,12 @@ spec:
         app: {{ .Release.Name }}-app
     spec:
       serviceAccountName: {{ .Release.Name }}-app
+      {{- if .Values.previewNodes.enabled }}
+      nodeSelector:
+        {{- toYaml .Values.previewNodes.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.previewNodes.tolerations | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -36,8 +42,6 @@ spec:
               value: {{ .Values.pr.number | quote }}
             - name: GIT_SHA
               value: {{ .Values.gitSha | quote }}
-            - name: NODE_TYPE
-              value: {{ .Values.nodeType | quote }}
             - name: NODE_NAME
               valueFrom:
                 fieldRef:

@@ -14,6 +14,12 @@ spec:
       labels:
         app: {{ .Release.Name }}-postgres
     spec:
+      {{- if .Values.previewNodes.enabled }}
+      nodeSelector:
+        {{- toYaml .Values.previewNodes.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.previewNodes.tolerations | nindent 8 }}
+      {{- end }}
       securityContext:
         # postgres:16-alpine's postgres user is uid/gid 70. Starting the
         # container directly as that uid (rather than root-then-su-exec,

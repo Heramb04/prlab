@@ -132,6 +132,13 @@ module "eks" {
     }
   }
 
+  # Karpenter discovers which security group to attach to nodes it
+  # provisions via this tag (same pattern as the subnet discovery tags the
+  # network module sets).
+  node_security_group_tags = {
+    "karpenter.sh/discovery" = var.cluster_name
+  }
+
   tags = {
     Project = "prlab"
   }

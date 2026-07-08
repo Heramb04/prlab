@@ -6,7 +6,19 @@ pr:
   number: 0
 
 gitSha: "unknown"
-nodeType: "on-demand"
+
+# Schedule preview pods onto Karpenter-provisioned preview nodes (tainted
+# spot-first capacity) instead of the system node group. Disable for the
+# Phase 1-style manual install on a cluster without Karpenter.
+previewNodes:
+  enabled: true
+  nodeSelector:
+    prlab.dev/node-purpose: preview
+  tolerations:
+    - key: prlab.dev/preview
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
 
 image:
   repository: "" # set at install time to the ECR repo URL
