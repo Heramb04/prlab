@@ -20,12 +20,12 @@ rediscover them.
 
 ## Status
 
-Building phase by phase. Currently: **Phase 2 — GitOps previews with ArgoCD**, done.
+Building phase by phase. Currently: **Phase 3 — Policy + TTL safety net**, done.
 
 - [x] Phase 0 — Foundations & guardrails
 - [x] Phase 1 — Cluster + one manual preview
 - [x] Phase 2 — GitOps previews with ArgoCD
-- [ ] Phase 3 — Policy + TTL safety net
+- [x] Phase 3 — Policy + TTL safety net
 - [ ] Phase 4 — Spot + interruption resilience
 - [ ] Phase 5 — Observability, SLOs & polish
 
@@ -40,16 +40,23 @@ terraform/
 │   ├── ecr/           # ECR repo + lifecycle policy
 │   ├── github-oidc/   # GitHub OIDC provider + plan/ECR-push IAM roles
 │   ├── eks/           # EKS cluster, node group, ALB controller, metrics-server
-│   └── argocd/        # ArgoCD install (Terraform helm_release)
+│   ├── argocd/        # ArgoCD install (Terraform helm_release)
+│   └── kyverno/       # Kyverno install (policy engine)
 └── envs/lab/          # the one environment this project runs (S3 backend)
 charts/preview-app/    # Helm chart: demo app + Postgres (StatefulSet) + ALB Ingress
 argocd/
 ├── applicationset-previews.yaml   # PR generator - the heart of the platform
 └── notifications.yaml             # PR comment on sync-healthy
+policies/              # Kyverno ClusterPolicies: disallow-root, require-limits,
+                       # restrict-registries, per-namespace quota/limits generation
+reaper/                # TTL reaper: Python CronJob, unit-tested; warns at TTL-6h
+                       # then closes the PR (teardown rides the normal prune path)
 .github/workflows/
-└── terraform.yml      # fmt, validate, tflint, checkov, plan-as-PR-comment
+├── terraform.yml      # fmt, validate, tflint, checkov, plan-as-PR-comment
+└── reaper.yml         # reaper: pytest on PR, build+push image on main
 docs/
-└── architecture.md    # design decisions and why
+├── architecture.md    # design decisions and why
+└── evidence/          # captured live policy denials etc.
 ```
 
 ## How previews work (Phase 2 — fully automatic)
@@ -70,15 +77,31 @@ Opening a PR on `prlab-demo-app` **is** the provisioning action:
    chart-managed resource, the whole namespace (and everything still in
    it) goes with it. No teardown pipeline.
 
+Guardrails on every preview namespace (Phase 3):
+
+- **Kyverno policies** (`policies/`): containers must not run as root,
+  must declare requests/limits, images only from the project ECR (plus the
+  ECR Public mirror for Postgres). Violations are denied at admission with
+  actionable messages — captured live in
+  [docs/evidence/kyverno-denials.md](docs/evidence/kyverno-denials.md).
+- **ResourceQuota + LimitRange** generated automatically in every
+  `preview=true` namespace by a Kyverno generate policy.
+- **TTL reaper** (`reaper/`): CronJob every 15 min. Warns on the PR at
+  TTL−6h, closes the PR past TTL (48h) so teardown rides the normal ArgoCD
+  prune path; directly deletes only *orphans* (closed PRs whose prune
+  failed). Unit-tested; images built by CI on pushes to `main`.
+
 One-time bootstrap after `terraform apply` (ArgoCD itself is
-Terraform-managed, but its ApplicationSet/Notifications config are applied
-via `kubectl` — see [docs/architecture.md](docs/architecture.md) for why
-CRD-heavy config like this stays outside Terraform's kubernetes_manifest):
+Terraform-managed, but CRD-heavy config — ApplicationSet, Notifications,
+Kyverno policies, the reaper CronJob — is applied via `kubectl`; see
+[docs/architecture.md](docs/architecture.md) for why):
 
 ```sh
 aws eks update-kubeconfig --name prlab-lab --region us-east-1
 kubectl apply -f argocd/applicationset-previews.yaml
 kubectl apply -f argocd/notifications.yaml
+kubectl apply -f policies/
+kubectl apply -f reaper/cronjob.yaml
 ```
 
 The GitHub token used by both the PR generator and Notifications is passed

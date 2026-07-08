@@ -285,6 +285,94 @@ printed or committed. Note this is a broadly-scoped personal token (`repo`,
 single-user lab, but the honest answer to "how would you scope this down
 for a team" is a GitHub App with narrowly-defined permissions instead.
 
+## Phase 3 — Policy + TTL safety net
+
+### Why prefix delegation had to come first
+
+t3.small's default ENI math (3 ENIs × 4 IPs) caps kubelet at **11 pods per
+node**. System pods + ArgoCD already used 20 of the fleet's 22 slots —
+Kyverno's controllers wouldn't have fit, let alone more previews. VPC CNI
+prefix delegation assigns /28 prefixes (16 IPs) per ENI slot instead of
+single IPs; combined with a nodeadm `maxPods: 110` override it lifts the
+ceiling by an order of magnitude on the same instances, for free. Two
+gotchas found live: (1) the eks module's `ami_type` must be set explicitly
+or its user-data logic silently falls back to the AL2 template and drops
+the nodeadm config — the node group only *reports* AL2023 because the EKS
+API defaults it; (2) the vpc-cni addon move from `this` to
+`before_compute` in the module races (create hit 409 before the delete
+finished) — harmless, the re-apply converged, but "terraform exit 1 ≠
+nothing worked": the node roll inside that same apply had already
+succeeded.
+
+### Why quota/limits are injected by a Kyverno generate policy, not the Helm chart
+
+Chart-declared ResourceQuota/LimitRange only guards namespaces that chart
+creates. A generate policy keyed on the `preview=true` namespace label
+holds no matter how a preview namespace comes to exist — this chart, a
+future second chart, or somebody's kubectl. The platform enforces its own
+floor. (Verified: a bare `kubectl create namespace` + label got its quota
+within ~2 seconds.) The background controller needs extra RBAC to create
+core resources — granted via Kyverno's documented
+`rbac.kyverno.io/aggregate-to-background-controller` label, see
+`policies/kyverno-rbac.yaml`.
+
+### An admission-ordering subtlety: why require-limits bites Deployments, not Pods
+
+The API server's built-in LimitRanger plugin *defaults* missing
+requests/limits on **Pods** during the mutating phase, before validating
+webhooks run — so a bare Pod usually sails past the require-limits policy
+with LimitRange-injected values. But LimitRanger never touches a
+**Deployment's pod template**, and Kyverno autogen validates exactly that.
+Net effect: the denial lands at Deployment admission (where ArgoCD also
+reports it), and Pod-level defaulting acts as a second net rather than a
+bypass. Worth knowing before writing "why didn't my policy fire?" bug
+reports.
+
+### Why the reaper closes PRs instead of deleting cluster resources
+
+For an **open** PR, deleting the Application or namespace is futile: the
+ApplicationSet regenerates the Application on its next 60s poll, and
+selfHeal re-syncs the namespace. The only teardown that *sticks* is
+removing the PR from the generator's result set — i.e. closing the PR. So
+past TTL the reaper posts a comment and closes the PR via the GitHub API,
+and teardown flows through the exact same ArgoCD prune path as a human
+closing it. Direct in-cluster deletion happens only for **orphans**:
+closed PRs whose namespace is still around after a grace period — exactly
+the silent-prune-failure mode we hit live in Phase 2. Defense in depth,
+informed by an actual observed failure, not a hypothetical. A pleasant
+side effect: the reaper's Kubernetes RBAC is tiny (list/delete namespaces,
+delete Applications) because for the common case it touches nothing
+in-cluster at all.
+
+### Why warnings are tracked with a PR label, not comment-history scanning
+
+Idempotency across reaper runs needs "did I already warn?" to be cheap and
+reliable. Scanning comment history is O(comments) and fragile against
+edited/deleted comments; a `preview-ttl-warned` label is one API call to
+check (it rides along on the PR GET) and survives everything short of a
+human removing it — which is a reasonable "snooze" gesture anyway.
+
+### Why the ApplicationSet template now sets the resources-finalizer
+
+Deleting an ArgoCD Application by any path other than the ApplicationSet's
+own prune (reaper, kubectl, UI) is **non-cascading** unless the
+Application carries `resources-finalizer.argocd.argoproj.io` — the object
+vanishes and every deployed resource stays behind, the same orphan class
+as Phase 2's namespace bug. The ApplicationSet's own prune cascades
+regardless, which is why Phase 2's close-PR test passed without it; the
+finalizer matters the moment anything else (like the reaper) deletes an
+Application.
+
+### Why the reaper is a Python CronJob, not a Kyverno CleanupPolicy
+
+Kyverno's cleanup controller can delete resources on a schedule, but the
+reaper's job is a *workflow*, not a deletion: look up the PR's state on
+GitHub, warn on the PR, close the PR, and only delete directly in the
+orphan case. That needs an external API client and branching logic — a
+small, unit-testable Python program is the honest tool. The cleanup
+controller is disabled in the Kyverno install to save a pod's worth of
+memory on t3.smalls.
+
 ### Why the preview namespace has no custom "created-at" annotation
 
 Kubernetes already stamps every object with an immutable

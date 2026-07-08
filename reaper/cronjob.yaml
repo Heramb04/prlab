@@ -62,7 +62,7 @@ spec:
             - name: reaper
               # Immutable sha tag; bump deliberately when reaper code changes
               # (built and pushed by .github/workflows/reaper.yml).
-              image: 211374268683.dkr.ecr.us-east-1.amazonaws.com/prlab-reaper:REAPER_IMAGE_TAG
+              image: 211374268683.dkr.ecr.us-east-1.amazonaws.com/prlab-reaper:sha-c970364c
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
