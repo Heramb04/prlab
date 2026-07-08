@@ -32,13 +32,28 @@ resource "aws_iam_role" "fis" {
 }
 
 data "aws_iam_policy_document" "fis" {
+  # Describe* actions don't support resource-level permissions; "*" is the
+  # only valid scope for this one.
   statement {
-    effect = "Allow"
-    actions = [
-      "ec2:DescribeInstances",
-      "ec2:SendSpotInstanceInterruptions",
-    ]
+    effect    = "Allow"
+    actions   = ["ec2:DescribeInstances"]
     resources = ["*"]
+  }
+
+  # The interruption itself is constrained to instances the preview
+  # NodePool provisioned - FIS physically cannot interrupt the system node
+  # group or anything else, even if the template's target selector were
+  # misconfigured.
+  statement {
+    effect    = "Allow"
+    actions   = ["ec2:SendSpotInstanceInterruptions"]
+    resources = ["arn:aws:ec2:*:*:instance/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/karpenter.sh/nodepool"
+      values   = ["preview"]
+    }
   }
 }
 
