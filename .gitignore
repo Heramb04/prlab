@@ -24,3 +24,7 @@ override.tf.json
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Local/internal working notes - not for the public repo
+HANDOFF.md
+LOCAL-NOTES.md

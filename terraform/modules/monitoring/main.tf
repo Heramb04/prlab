@@ -75,8 +75,10 @@ resource "helm_release" "kube_prometheus_stack" {
     }
 
     grafana = {
-      enabled       = true
-      adminPassword = "prlab-grafana" # lab only; UI reachable via port-forward, never an ALB
+      enabled = true
+      # No adminPassword set: the chart generates a random one into the
+      # kps-grafana Secret. Never hardcode credentials in a public repo,
+      # even for a port-forward-only lab UI.
       resources = {
         requests = { cpu = "50m", memory = "128Mi" }
         limits   = { memory = "256Mi" }
