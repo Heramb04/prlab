@@ -1,10 +1,6 @@
-# Spot-savings exporter: monitoring namespace (kube-prometheus-stack joins
-# it in Phase 5 and scrapes this via the prometheus.io annotations).
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: monitoring
----
+# Platform exporter (spot savings + preview-ready SLO metrics). The
+# monitoring namespace itself is Terraform-managed (argocd module, which
+# also provisions the github-token secret this needs).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -12,6 +8,29 @@ metadata:
   namespace: monitoring
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::211374268683:role/prlab-lab-spot-exporter
+---
+# SLO metrics read ArgoCD Applications (first-deployment timestamps).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spot-exporter-app-reader
+rules:
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: spot-exporter-app-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: spot-exporter-app-reader
+subjects:
+  - kind: ServiceAccount
+    name: spot-exporter
+    namespace: monitoring
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -46,6 +65,13 @@ spec:
           env:
             - name: AWS_REGION
               value: us-east-1
+            - name: GITHUB_REPO
+              value: Heramb04/prlab-demo-app
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-token
+                  key: github-token
           resources:
             requests: {cpu: 25m, memory: 64Mi}
             limits: {cpu: 100m, memory: 128Mi}

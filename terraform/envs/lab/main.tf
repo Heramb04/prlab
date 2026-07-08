@@ -150,6 +150,16 @@ module "spot_exporter" {
   oidc_provider_arn = module.eks.oidc_provider_arn
 }
 
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  cluster_name           = module.eks.cluster_name
+  cluster_endpoint       = module.eks.cluster_endpoint
+  cluster_ca_certificate = module.eks.cluster_certificate_authority_data
+  region                 = var.region
+  namespace              = module.argocd.monitoring_namespace
+}
+
 # NOT instantiated: this Free Plan burner account has no FIS subscription
 # (CreateExperimentTemplate fails with SubscriptionRequiredException -
 # verified live). modules/fis is kept as the correct implementation for a

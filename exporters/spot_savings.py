@@ -1,11 +1,22 @@
-"""Prometheus exporter: estimated $ saved by running previews on spot.
+"""Platform exporter: spot savings + preview-readiness SLO metrics.
 
-Every scrape interval it lists running instances provisioned by the
-preview NodePool (tag karpenter.sh/nodepool=preview), looks up the current
-spot price for each, and compares against the on-demand price for the same
-type. Exposes plain-text Prometheus metrics on :9100/metrics via stdlib
+Part 1 (FinOps): every interval, list running instances provisioned by the
+preview NodePool (tag karpenter.sh/nodepool=preview), look up the current
+spot price for each, and compare against the on-demand price for the same
+type.
+
+Part 2 (SLO): for every preview Application, measure "time from PR open to
+preview ready" = ArgoCD's first recorded deployment (status.history[0]
+.deployedAt) minus the PR's createdAt from GitHub. Each PR is measured
+once and remembered in memory; counters expose how many previews were
+measured and how many met the 5-minute target, from which Grafana computes
+the SLO success rate and error budget. In-memory history resets on
+restart - acceptable for a lab (a production build would drive this from
+recording rules over an event stream instead, noted in docs).
+
+Exposes plain-text Prometheus metrics on :9100/metrics via stdlib
 http.server - no prometheus_client dependency needed for a handful of
-gauges.
+gauges/counters.
 
 On-demand prices are a small static table (us-east-1, Linux) rather than
 calls to the AWS Pricing API: the Pricing API needs different IAM, a
@@ -17,17 +28,25 @@ tradeoff; extend the table if the NodePool ever widens.
 import json
 import logging
 import os
+import ssl
 import threading
 import time
+import urllib.request
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import boto3
 
-log = logging.getLogger("spot-savings")
+log = logging.getLogger("platform-exporter")
 
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 NODEPOOL_TAG = os.environ.get("NODEPOOL_TAG", "preview")
 SCRAPE_INTERVAL_S = int(os.environ.get("SCRAPE_INTERVAL_S", "60"))
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "Heramb04/prlab-demo-app")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+SLO_TARGET_SECONDS = int(os.environ.get("SLO_TARGET_SECONDS", "300"))
+
+_SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
 
 # us-east-1 Linux on-demand, USD/hour.
 ON_DEMAND_USD_PER_HOUR = {
@@ -39,6 +58,87 @@ ON_DEMAND_USD_PER_HOUR = {
 }
 
 _state: dict = {"metrics": "", "updated": 0.0}
+
+# pr number -> ready_seconds, measured once per PR for this exporter's
+# lifetime (Application history[0] is immutable once written).
+_slo_measured: dict[int, float] = {}
+
+
+def _iso(ts: str) -> datetime:
+    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
+def _k8s_get(path: str):
+    with open(f"{_SA_DIR}/token") as f:
+        token = f.read()
+    ctx = ssl.create_default_context(cafile=f"{_SA_DIR}/ca.crt")
+    req = urllib.request.Request(
+        f"https://kubernetes.default.svc{path}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
+        return json.load(resp)
+
+
+def _github_pr_created_at(number: int) -> datetime | None:
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{number}",
+        headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return _iso(json.load(resp)["created_at"])
+    except Exception:  # noqa: BLE001 - PR may be gone; skip, retry next pass
+        log.exception("PR #%s lookup failed", number)
+        return None
+
+
+def collect_slo() -> str:
+    """Measure preview-ready latency for any not-yet-measured preview app."""
+    apps = _k8s_get(
+        "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications"
+        "?labelSelector=preview%3Dtrue"
+    )["items"]
+    for app in apps:
+        try:
+            pr = int(app["metadata"]["labels"]["pr-number"])
+        except (KeyError, ValueError):
+            continue
+        if pr in _slo_measured:
+            continue
+        history = app.get("status", {}).get("history", [])
+        if not history:
+            continue  # not deployed yet; measure on a later pass
+        first_deployed = _iso(history[0]["deployedAt"])
+        created = _github_pr_created_at(pr)
+        if created is None:
+            continue
+        ready_s = max((first_deployed - created).total_seconds(), 0.0)
+        _slo_measured[pr] = ready_s
+        log.info("PR #%s preview ready in %.0fs", pr, ready_s)
+
+    within = sum(1 for v in _slo_measured.values() if v <= SLO_TARGET_SECONDS)
+    lines = [
+        "# HELP prlab_preview_slo_target_seconds Readiness SLO target (PR open -> preview deployed).",
+        "# TYPE prlab_preview_slo_target_seconds gauge",
+        f"prlab_preview_slo_target_seconds {SLO_TARGET_SECONDS}",
+        "# HELP prlab_previews_measured_total Previews measured since exporter start.",
+        "# TYPE prlab_previews_measured_total counter",
+        f"prlab_previews_measured_total {len(_slo_measured)}",
+        "# HELP prlab_previews_ready_within_slo_total Previews that met the readiness target.",
+        "# TYPE prlab_previews_ready_within_slo_total counter",
+        f"prlab_previews_ready_within_slo_total {within}",
+        "# HELP prlab_preview_ready_seconds Seconds from PR open to first successful deploy.",
+        "# TYPE prlab_preview_ready_seconds gauge",
+    ]
+    lines += [
+        f'prlab_preview_ready_seconds{{pr="{pr}"}} {secs:.0f}'
+        for pr, secs in sorted(_slo_measured.items())
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def collect(ec2) -> str:
@@ -96,11 +196,20 @@ def collect(ec2) -> str:
 def refresher():
     ec2 = boto3.client("ec2", region_name=REGION)
     while True:
+        # Collect halves independently: a GitHub hiccup must not blank the
+        # FinOps metrics and vice versa. Each half keeps its last-good text.
+        parts = {}
         try:
-            _state["metrics"] = collect(ec2)
-            _state["updated"] = time.time()
-        except Exception:  # noqa: BLE001 - keep serving last-good metrics
-            log.exception("collect failed; serving stale metrics")
+            parts["savings"] = collect(ec2)
+        except Exception:  # noqa: BLE001
+            log.exception("savings collect failed; keeping stale half")
+        try:
+            parts["slo"] = collect_slo()
+        except Exception:  # noqa: BLE001
+            log.exception("slo collect failed; keeping stale half")
+        _state.update(parts)
+        _state["metrics"] = _state.get("savings", "") + _state.get("slo", "")
+        _state["updated"] = time.time()
         time.sleep(SCRAPE_INTERVAL_S)
 
 

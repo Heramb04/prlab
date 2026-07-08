@@ -63,6 +63,32 @@ resource "kubernetes_namespace_v1" "argocd" {
   }
 }
 
+# The monitoring namespace lives here (not in the monitoring module)
+# because this module already holds the GitHub token safely, and the SLO
+# exporter in monitoring needs the same token to read PR created_at
+# timestamps. One owner for both namespace and secret keeps the
+# token-handling surface in a single module.
+resource "kubernetes_namespace_v1" "monitoring" {
+  metadata {
+    name = "monitoring"
+  }
+}
+
+resource "kubernetes_secret_v1" "monitoring_github_token" {
+  metadata {
+    name      = "github-token"
+    namespace = kubernetes_namespace_v1.monitoring.metadata[0].name
+  }
+
+  data = {
+    github-token = var.github_token
+  }
+}
+
+output "monitoring_namespace" {
+  value = kubernetes_namespace_v1.monitoring.metadata[0].name
+}
+
 resource "helm_release" "argocd" {
   name       = "argocd"
   repository = "https://argoproj.github.io/argo-helm"
