@@ -204,6 +204,87 @@ IP: `pr-0.54-235-16-247.sslip.io`, which resolves correctly. Worth knowing
 before Phase 2 templates this per-PR — get the dash form wrong and every
 preview URL silently resolves nowhere.
 
+## Phase 2 — GitOps previews with ArgoCD
+
+### Two Helm-vs-ArgoCD ownership gotchas, and why the fixes differ
+
+Phase 1 removed the chart's `Namespace` template because the plain `helm`
+CLI's `--create-namespace` flag creates the namespace *outside* Helm's
+release tracking, so the chart's own `Namespace` resource then fails with
+"already exists" (an ownership-annotation mismatch). Phase 2 hit the
+mirror-image problem from ArgoCD's side: the Application's
+`CreateNamespace=true` syncOption also creates the namespace, but does
+**not** register it as a resource the Application manages - so when the PR
+closes and the Application is pruned, everything explicitly declared in the
+chart (Deployment, StatefulSet, Service, Ingress) got cleanly deleted, but
+the namespace itself, and a StatefulSet-derived PVC still sitting inside
+it, were silently left behind. Verified live with a real PR close, not
+theorized - the "everything is gone, zero teardown pipeline" claim only
+holds if you actually watch a namespace disappear.
+
+The fix is opposite to Phase 1's: **add** `templates/namespace.yaml` back,
+because ArgoCD's sync engine (unlike Helm's stricter ownership check)
+adopts a pre-existing bare namespace into the Application's tracked
+resources without conflict. The same file that broke a plain `helm
+install` is required for a correct `helm install`-via-ArgoCD.
+
+### Why StatefulSet PVCs need an explicit retention policy
+
+Separately from the namespace gap: Kubernetes never auto-deletes a
+`volumeClaimTemplate`-derived PVC when its StatefulSet is deleted - a
+deliberate anti-data-loss default, since normally you don't want a
+scale-down or redeploy to silently destroy a database's disk. Preview
+Postgres is disposable by design, so `persistentVolumeClaimRetentionPolicy:
+{ whenDeleted: Delete, whenScaled: Retain }` (Kubernetes 1.27+) opts back
+into deletion explicitly. Without it, every closed PR would leak a 1Gi EBS
+volume forever - a slow, invisible budget leak on a $140 total credit.
+
+### Why the "preview ready" URL comes from `.app.status.summary.externalURLs`, not a templated sslip.io hostname
+
+Phase 1's manual sslip.io hostname requires knowing the ALB's IP *before*
+creating the Ingress - a chicken-and-egg problem with no clean answer for
+a fully automated per-PR flow, since each preview's ALB IP isn't known
+until after ArgoCD has already synced it. Rather than solve that, the
+Ingress has no `spec.rules[].host` set at all (matches any host), and the
+ArgoCD Notifications template reads `.app.status.summary.externalURLs`
+instead - confirmed live to auto-populate from the Ingress's
+`status.loadBalancer.ingress[].hostname` once the ALB is provisioned, with
+no extra annotation required. The PR comment links the raw ALB hostname
+rather than a human-friendly sslip.io URL; a real domain + Route53 (the
+spec's other suggested option) would fix that, but wasn't in scope here.
+
+### Why the PR-comment webhook uses `trimPrefix "pr-" .app.metadata.name` instead of a label lookup
+
+Go's template dot-notation can't access a map key containing a hyphen -
+`{{.app.labels.pr-number}}` fails to parse ("bad character U+002D '-'"),
+because the parser reads it as `.app.labels.pr` followed by an invalid
+bare `-number` token. The fix isn't `{{index .app.labels "pr-number"}}`
+(which does work) but something even simpler: every Application is already
+named `pr-<number>` by the ApplicationSet template, so trimming that fixed
+prefix off `.app.metadata.name` gets the PR number without touching labels
+at all.
+
+### Why the ApplicationSet polls every 60 seconds, not the 30-minute default
+
+The platform's own SLO is "preview ready within 5 minutes of PR open." A
+30-minute poll interval would blow that budget on its own before a single
+container even starts. 60 seconds keeps detection latency low while
+staying far under GitHub's 5000 req/hr authenticated rate limit for a
+single-repo poll.
+
+### Why the ApplicationSet's PR generator and Notifications share one GitHub token, and why it's a personal PAT
+
+Both need GitHub API access - one to list open PRs, one to post a comment
+- and both read the same Kubernetes Secret (`argocd-notifications-secret`,
+key `github-token`), avoiding provisioning the same credential twice. It's
+sourced from `gh auth token` (this machine's already-authenticated GitHub
+CLI session) at `terraform apply` time via `TF_VAR_github_token`, and never
+printed or committed. Note this is a broadly-scoped personal token (`repo`,
+`workflow`, ...), not a fine-grained PAT limited to just
+`prlab-demo-app`'s pull requests and issues - an acceptable tradeoff for a
+single-user lab, but the honest answer to "how would you scope this down
+for a team" is a GitHub App with narrowly-defined permissions instead.
+
 ### Why the preview namespace has no custom "created-at" annotation
 
 Kubernetes already stamps every object with an immutable

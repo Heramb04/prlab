@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Release.Namespace }}
+  labels:
+    preview: "true"
+    pr-number: {{ .Values.pr.number | quote }}
+  # Declaring the Namespace here (in addition to the Application's
+  # CreateNamespace=true syncOption, which only creates it - it does not
+  # track it as a managed/prunable resource) is what makes ArgoCD actually
+  # delete the whole namespace, and everything still in it, when the PR
+  # closes and the Application is pruned. Verified live: without this,
+  # closing a PR deleted the Deployment/StatefulSet/Service/Ingress but
+  # left the namespace and its StatefulSet-derived PVC orphaned.
+  #
+  # This resource is intentionally absent from the Phase 1 manual `helm
+  # install` path: the plain `helm` CLI's stricter ownership-annotation
+  # check collides with `--create-namespace` on the exact same object
+  # (see docs/architecture.md). ArgoCD's sync engine adopts it cleanly
+  # instead, so this file only matters once ArgoCD is doing the syncing.

@@ -107,3 +107,19 @@ module "eks" {
   private_subnet_ids = module.network.private_subnet_ids
   public_subnet_ids  = module.network.public_subnet_ids
 }
+
+variable "github_token" {
+  description = "GitHub PAT for the ArgoCD PR generator + Notifications (never committed - passed via TF_VAR_github_token at apply time)"
+  type        = string
+  sensitive   = true
+}
+
+module "argocd" {
+  source = "../../modules/argocd"
+
+  cluster_name           = module.eks.cluster_name
+  cluster_endpoint       = module.eks.cluster_endpoint
+  cluster_ca_certificate = module.eks.cluster_certificate_authority_data
+  region                 = var.region
+  github_token           = var.github_token
+}

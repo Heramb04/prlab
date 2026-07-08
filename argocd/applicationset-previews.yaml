@@ -1,0 +1,59 @@
+# The heart of the platform: one Application per open PR on prlab-demo-app,
+# templated automatically by ArgoCD's Pull Request generator. Nothing here
+# is triggered by CI - ArgoCD polls GitHub itself and reconciles. Applied
+# once via `kubectl apply -f` after ArgoCD is installed (see README);
+# ArgoCD then owns and reconciles this resource going forward.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: prlab-previews
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - pullRequest:
+        github:
+          owner: Heramb04
+          repo: prlab-demo-app
+          tokenRef:
+            secretName: argocd-notifications-secret
+            key: github-token
+        # Default poll interval is 30 min - far too slow against the
+        # platform's 5-minute "preview ready" SLO. 60s keeps PR open/close
+        # detection fast without hammering GitHub's API (well under the
+        # 5000 req/hr authenticated rate limit).
+        requeueAfterSeconds: 60
+  template:
+    metadata:
+      name: "pr-{{.number}}"
+      labels:
+        preview: "true"
+        pr-number: "{{.number}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/Heramb04/prlab.git
+        targetRevision: main
+        path: charts/preview-app
+        helm:
+          valuesObject:
+            pr:
+              number: "{{.number}}"
+            gitSha: "{{.head_sha}}"
+            image:
+              repository: 211374268683.dkr.ecr.us-east-1.amazonaws.com/prlab-demo-app
+              tag: "pr-{{.number}}-{{.head_sha}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "pr-{{.number}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+        managedNamespaceMetadata:
+          labels:
+            preview: "true"
+            pr-number: "{{.number}}"

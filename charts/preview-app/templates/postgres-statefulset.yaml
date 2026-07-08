@@ -44,6 +44,13 @@ spec:
         - name: init-sql
           configMap:
             name: {{ .Release.Name }}-postgres-init
+  # Kubernetes never auto-deletes volumeClaimTemplate-derived PVCs when a
+  # StatefulSet is deleted (a deliberate anti-data-loss default). Previews
+  # are disposable by design, so opt in to deletion explicitly - otherwise
+  # every closed PR leaks a 1Gi EBS volume forever.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
   volumeClaimTemplates:
     - metadata:
         name: data

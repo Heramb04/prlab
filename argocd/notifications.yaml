@@ -1,0 +1,49 @@
+# Posts "preview ready" as a comment on the PR once ArgoCD finishes syncing
+# and the Application is healthy. Merged into the argocd-notifications-cm
+# ConfigMap that the (Helm-chart-bundled) notifications controller reads.
+#
+# The GitHub token itself lives in the argocd-notifications-secret Secret
+# (created by terraform/modules/argocd - not in this file), referenced
+# below via the "$github-token" convention the notifications controller
+# expects.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+data:
+  service.webhook.github: |
+    url: https://api.github.com
+    headers:
+    - name: Authorization
+      value: Bearer $github-token
+    - name: Accept
+      value: application/vnd.github+json
+    - name: Content-Type
+      value: application/json
+
+  template.preview-ready: |
+    webhook:
+      github:
+        method: POST
+        # Go templates can't dot-access a hyphenated map key (.app.labels.pr-number
+        # fails to parse), and trimming the "pr-" prefix off the Application's own
+        # name sidesteps that entirely rather than reaching for `index`.
+        path: "/repos/Heramb04/prlab-demo-app/issues/{{trimPrefix \"pr-\" .app.metadata.name}}/comments"
+        body: |
+          {{$url := "(pending)"}}
+          {{if .app.status.summary.externalURLs}}{{$url = index .app.status.summary.externalURLs 0}}{{end}}
+          {"body": "prlab preview ready: {{$url}}"}
+
+  trigger.on-preview-ready: |
+    - when: app.status.sync.status == 'Synced' and app.status.health.status == 'Healthy'
+      oncePer: app.status.sync.revision
+      send: [preview-ready]
+
+  subscriptions: |
+    - recipients:
+      - github
+      triggers:
+      - on-preview-ready
