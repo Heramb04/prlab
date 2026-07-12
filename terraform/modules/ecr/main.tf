@@ -18,6 +18,8 @@ variable "repository_name" {
 resource "aws_ecr_repository" "app" {
   name                 = var.repository_name
   image_tag_mutability = "IMMUTABLE"
+  # Lab images are disposable; never let leftover images block terraform destroy.
+  force_delete = true
 
   image_scanning_configuration {
     scan_on_push = true
@@ -69,6 +71,8 @@ resource "aws_ecr_lifecycle_policy" "app" {
 resource "aws_ecr_repository" "reaper" {
   name                 = "prlab-reaper"
   image_tag_mutability = "IMMUTABLE"
+  # Lab images are disposable; never let leftover images block terraform destroy.
+  force_delete = true
 
   image_scanning_configuration {
     scan_on_push = true
@@ -114,6 +118,8 @@ resource "aws_ecr_lifecycle_policy" "reaper" {
 resource "aws_ecr_repository" "exporter" {
   name                 = "prlab-spot-exporter"
   image_tag_mutability = "IMMUTABLE"
+  # Lab images are disposable; never let leftover images block terraform destroy.
+  force_delete = true
 
   image_scanning_configuration {
     scan_on_push = true

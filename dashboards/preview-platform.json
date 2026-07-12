@@ -1,16 +1,27 @@
 {
-  "title": "prlab — Preview Platform",
+  "title": "prlab \u2014 Preview Platform",
   "uid": "prlab-preview-platform",
   "timezone": "utc",
   "refresh": "1m",
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
   "panels": [
     {
       "id": 1,
       "type": "stat",
       "title": "Active previews",
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
           "expr": "count(kube_namespace_created{namespace=~\"pr-[0-9]+\"}) OR vector(0)",
@@ -21,69 +32,169 @@
         "defaults": {
           "unit": "short",
           "decimals": 0,
-          "color": { "mode": "fixed", "fixedColor": "text" }
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
         },
         "overrides": []
       },
-      "options": { "colorMode": "none", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Preview nodes (spot / on-demand)",
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "prlab_preview_nodes{lifecycle=\"spot\"}", "legendFormat": "spot" },
-        { "expr": "prlab_preview_nodes{lifecycle=\"on-demand\"}", "legendFormat": "on-demand" }
+        {
+          "expr": "max(prlab_preview_nodes{lifecycle=\"spot\"})",
+          "legendFormat": "spot"
+        },
+        {
+          "expr": "max(prlab_preview_nodes{lifecycle=\"on-demand\"})",
+          "legendFormat": "on-demand"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "text" } },
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
         "overrides": []
       },
-      "options": { "colorMode": "none", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 3,
       "type": "stat",
       "title": "Saved vs on-demand ($/hour)",
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "prlab_spot_hourly_savings_usd", "legendFormat": "savings" }
+        {
+          "expr": "max(prlab_spot_hourly_savings_usd)",
+          "legendFormat": "savings"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "currencyUSD", "decimals": 4, "color": { "mode": "fixed", "fixedColor": "text" } },
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
         "overrides": []
       },
-      "options": { "colorMode": "none", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 4,
       "type": "stat",
       "title": "Interruption-queue events handled",
       "description": "Messages Karpenter consumed from the SQS interruption queue (spot warnings, rebalance, state changes). Every one of these was handled without a human.",
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "karpenter_interruption_deleted_messages_total", "legendFormat": "handled" }
+        {
+          "expr": "max(karpenter_interruption_deleted_messages_total)",
+          "legendFormat": "handled"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "text" } },
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
         "overrides": []
       },
-      "options": { "colorMode": "none", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 5,
       "type": "stat",
-      "title": "SLO: previews ready ≤ 5 min",
+      "title": "SLO: previews ready \u2264 5 min",
       "description": "Target: 99% of previews ready within 5 minutes of PR open (see docs/slo.md). Measured since exporter start.",
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
-          "expr": "prlab_previews_ready_within_slo_total / prlab_previews_measured_total",
+          "expr": "max(prlab_previews_ready_within_slo_total / prlab_previews_measured_total)",
           "legendFormat": "success rate"
         }
       ],
@@ -96,26 +207,51 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.95 },
-              { "color": "green", "value": 0.99 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.95
+              },
+              {
+                "color": "green",
+                "value": 0.99
+              }
             ]
           }
         },
         "overrides": []
       },
-      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 6,
       "type": "stat",
       "title": "Error budget remaining",
       "description": "Fraction of the 1% miss budget still unspent. Exhausted budget freezes platform feature work (docs/slo.md).",
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
-          "expr": "clamp_min(1 - ((1 - (prlab_previews_ready_within_slo_total / prlab_previews_measured_total)) / 0.01), 0)",
+          "expr": "clamp_min(1 - ((1 - (max(prlab_previews_ready_within_slo_total) / max(prlab_previews_measured_total))) / 0.01), 0)",
           "legendFormat": "budget left"
         }
       ],
@@ -128,24 +264,52 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.25 },
-              { "color": "green", "value": 0.5 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.25
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
             ]
           }
         },
         "overrides": []
       },
-      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 7,
       "type": "bargauge",
       "title": "Preview ready time by PR (target 300s)",
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "prlab_preview_ready_seconds", "legendFormat": "PR #{{pr}}" }
+        {
+          "expr": "max by (pr) (prlab_preview_ready_seconds)",
+          "legendFormat": "PR #{{pr}}"
+        }
       ],
       "fieldConfig": {
         "defaults": {
@@ -155,8 +319,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 300 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
             ]
           }
         },
@@ -165,60 +335,170 @@
       "options": {
         "orientation": "horizontal",
         "displayMode": "basic",
-        "reduceOptions": { "calcs": ["lastNotNull"] }
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
       }
     },
     {
       "id": 8,
       "type": "timeseries",
       "title": "Preview node mix",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "prlab_preview_nodes{lifecycle=\"spot\"}", "legendFormat": "spot" },
-        { "expr": "prlab_preview_nodes{lifecycle=\"on-demand\"}", "legendFormat": "on-demand" }
+        {
+          "expr": "prlab_preview_nodes{lifecycle=\"spot\"}",
+          "legendFormat": "spot"
+        },
+        {
+          "expr": "prlab_preview_nodes{lifecycle=\"on-demand\"}",
+          "legendFormat": "on-demand"
+        }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
           "decimals": 0,
           "min": 0,
-          "custom": { "lineWidth": 2, "fillOpacity": 8, "pointSize": 5, "spanNulls": false }
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "pointSize": 5,
+            "spanNulls": false
+          }
         },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "spot" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } } ] },
-          { "matcher": { "id": "byName", "options": "on-demand" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] }
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "spot"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "on-demand"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
         ]
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
       }
     },
     {
       "id": 9,
       "type": "timeseries",
       "title": "Preview capacity cost ($/hour)",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "prlab_spot_hourly_cost_usd", "legendFormat": "actual (spot)" },
-        { "expr": "prlab_ondemand_equivalent_hourly_cost_usd", "legendFormat": "on-demand equivalent" }
+        {
+          "expr": "prlab_spot_hourly_cost_usd",
+          "legendFormat": "actual (spot)"
+        },
+        {
+          "expr": "prlab_ondemand_equivalent_hourly_cost_usd",
+          "legendFormat": "on-demand equivalent"
+        }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
           "min": 0,
-          "custom": { "lineWidth": 2, "fillOpacity": 8, "pointSize": 5, "spanNulls": false }
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "pointSize": 5,
+            "spanNulls": false
+          }
         },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "actual (spot)" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } } ] },
-          { "matcher": { "id": "byName", "options": "on-demand equivalent" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] }
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "actual (spot)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "on-demand equivalent"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
         ]
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
       }
     }
   ],
